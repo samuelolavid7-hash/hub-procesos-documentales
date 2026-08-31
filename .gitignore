@@ -1,0 +1,20 @@
+# Dependencias
+/node_modules
+/.pnpm-store/
+
+# Archivos generados por Next.js
+/.next/
+/out/
+
+# Archivos locales y variables de entorno
+.env*
+!.env.example
+
+# Registros y archivos del sistema
+*.log
+.DS_Store
+Thumbs.db
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts

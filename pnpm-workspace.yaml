@@ -1,0 +1,9 @@
+packages:
+  - "."
+
+# Evita problemas de enlaces simbólicos dentro de carpetas sincronizadas por OneDrive.
+nodeLinker: hoisted
+
+# Dependencia transitiva de ESLint que compila su resolución nativa.
+onlyBuiltDependencies:
+  - unrs-resolver
