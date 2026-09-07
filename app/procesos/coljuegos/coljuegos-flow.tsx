@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { LoadBatchStep } from "@/app/procesos/coljuegos/_steps/cargar-lote";
 import { PlateReadingStep } from "@/app/procesos/coljuegos/_steps/lectura-placas";
 import { AssistedGroupingStep } from "@/app/procesos/coljuegos/_steps/agrupacion-asistida";
@@ -8,11 +8,21 @@ import { ValidationDownloadStep } from "@/app/procesos/coljuegos/_steps/validaci
 import { ProcessHeader } from "@/components/shared/process-header";
 import { Stepper } from "@/components/shared/stepper";
 import { useToast } from "@/components/shared/toast";
+import {
+  initialIngestionState,
+  ingestionReducer,
+} from "@/app/procesos/coljuegos/ingestion-reducer";
+import {
+  ingestLocalFiles,
+  parseShellOrderFolderName,
+  revokePhotoThumbnails,
+} from "@/lib/coljuegos/file-ingestion";
 import type {
   AssignablePhotoType,
   BatchPhoto,
   MachineAssignment,
   PlateReading,
+  LocalOrderDraft,
   ShellOrder,
   SimulatedBatchUpload,
 } from "@/lib/coljuegos/types";
@@ -40,13 +50,25 @@ export function ColjuegosFlow({
   initialAssignments,
 }: ColjuegosFlowProps) {
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
-  const [batchLoaded, setBatchLoaded] = useState(false);
+  const [ingestion, dispatchIngestion] = useReducer(ingestionReducer, initialIngestionState);
   const [assignments, setAssignments] = useState(initialAssignments);
+  const isMounted = useRef(true);
   const { showToast } = useToast();
 
-  function handleLoadBatch() {
-    // TODO: integración real — reemplazar esta simulación por la carga desde SharePoint.
-    setBatchLoaded(true);
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const photos = ingestion.localBatch?.photos ?? [];
+    return () => revokePhotoThumbnails(photos);
+  }, [ingestion.localBatch]);
+
+  function handleLoadDemo() {
+    dispatchIngestion({ type: "LOAD_DEMO" });
     setAssignments(initialAssignments);
     showToast({
       title: "Lote cargado",
@@ -55,8 +77,66 @@ export function ColjuegosFlow({
     });
   }
 
+  async function handleFilesSelected(files: File[], folderName: string) {
+    const detectedOrder = parseShellOrderFolderName(folderName);
+    const orderDraft: LocalOrderDraft = detectedOrder
+      ? {
+        folderName: detectedOrder.folderName,
+        number: detectedOrder.number,
+        machineCount: String(detectedOrder.machineCount),
+        modelCode: detectedOrder.modelCode,
+        expectedSerialsText: "",
+        dataSource: "folder-name",
+      }
+      : {
+        folderName,
+        number: "",
+        machineCount: "",
+        modelCode: "",
+        expectedSerialsText: "",
+        dataSource: "manual",
+      };
+
+    dispatchIngestion({ type: "START_REAL_BATCH", orderDraft });
+
+    try {
+      const batch = await ingestLocalFiles({
+        files,
+        folderName,
+        onProgress: (progress) => {
+          if (isMounted.current) dispatchIngestion({ type: "UPDATE_PROGRESS", progress });
+        },
+      });
+
+      if (!isMounted.current) {
+        revokePhotoThumbnails(batch.photos);
+        return;
+      }
+
+      dispatchIngestion({ type: "COMPLETE_REAL_BATCH", batch });
+      showToast({
+        title: batch.photos.length > 0 ? "Carpeta procesada" : "No encontramos fotos compatibles",
+        description: batch.photos.length > 0
+          ? `${batch.photos.length} fotos quedaron listas para revisar en el navegador.`
+          : "Usa archivos JPG, JPEG, PNG o HEIC.",
+        tone: batch.photos.length > 0 ? "success" : "info",
+      });
+    } catch {
+      if (!isMounted.current) return;
+      dispatchIngestion({
+        type: "UPDATE_PROGRESS",
+        progress: { status: "completed-with-errors", processed: 0, total: 0, errorCount: 1 },
+      });
+      showToast({
+        title: "No pudimos procesar la carpeta",
+        description: "Vuelve a seleccionarla. Las demás funciones siguen disponibles.",
+        tone: "info",
+      });
+    }
+  }
+
   function handleProcessBatch() {
-    if (!batchLoaded) return;
+    if (!ingestion.demoLoaded || ingestion.mode !== "demo") return;
 
     // TODO: integración real — enviar las imágenes al servicio de lectura y clasificación.
     setCurrentStep(2);
@@ -137,9 +217,15 @@ export function ColjuegosFlow({
         <LoadBatchStep
           shellOrder={shellOrder}
           simulatedBatch={simulatedBatch}
-          batchLoaded={batchLoaded}
-          onLoadBatch={handleLoadBatch}
-          onProcessBatch={handleProcessBatch}
+          mode={ingestion.mode}
+          demoLoaded={ingestion.demoLoaded}
+          localBatch={ingestion.localBatch}
+          orderDraft={ingestion.orderDraft}
+          progress={ingestion.progress}
+          onFilesSelected={(files, folderName) => void handleFilesSelected(files, folderName)}
+          onOrderDraftChange={(field, value) => dispatchIngestion({ type: "UPDATE_ORDER", field, value })}
+          onLoadDemo={handleLoadDemo}
+          onProcessDemo={handleProcessBatch}
         />
       ) : currentStep === 2 ? (
         <PlateReadingStep

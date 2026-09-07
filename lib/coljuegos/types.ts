@@ -8,6 +8,14 @@ export type AssignablePhotoType = Exclude<PhotoType, "placa">;
 
 export type PhotoQuality = "correcta" | "borrosa";
 
+export type LocalPhotoExtension = "jpg" | "jpeg" | "png" | "heic";
+
+export type PhotoTimestampSource = "exif" | "file";
+
+export type LocalPhotoProcessingStatus = "ready" | "warning" | "error";
+
+export type BatchMode = "none" | "demo" | "real";
+
 export type PlateStatus =
   | "coincide-so"
   | "fecha-ilegible"
@@ -53,6 +61,67 @@ export interface BatchPhoto {
   quality: PhotoQuality;
   detectedSerial?: string;
   manufactureDate?: string;
+}
+
+/**
+ * Una foto real conserva el File original sin leer todos sus bytes. La UI usa
+ * únicamente thumbnailUrl, que apunta a una miniatura comprimida de 400 px.
+ */
+export interface LocalBatchPhoto {
+  source: "local";
+  id: string;
+  file: File;
+  fileName: string;
+  relativePath: string;
+  extension: LocalPhotoExtension;
+  sizeBytes: number;
+  lastModified: number;
+  capturedAt: string;
+  timestampSource: PhotoTimestampSource;
+  orientation?: number;
+  originalWidth?: number;
+  originalHeight?: number;
+  thumbnailUrl: string | null;
+  processingStatus: LocalPhotoProcessingStatus;
+  warning?: string;
+  error?: string;
+}
+
+export interface IngestionProgress {
+  status: "idle" | "running" | "completed" | "completed-with-errors";
+  processed: number;
+  total: number;
+  currentFile?: string;
+  errorCount: number;
+}
+
+export interface PhotoProcessingError {
+  fileName: string;
+  message: string;
+}
+
+export interface DetectedShellOrder {
+  folderName: string;
+  number: string;
+  machineCount: number;
+  modelCode: string;
+}
+
+export interface LocalOrderDraft {
+  folderName: string;
+  number: string;
+  machineCount: string;
+  modelCode: string;
+  expectedSerialsText: string;
+  dataSource: "folder-name" | "manual";
+}
+
+export interface LocalBatch {
+  folderName: string;
+  photos: LocalBatchPhoto[];
+  errors: PhotoProcessingError[];
+  hasHeic: boolean;
+  ignoredFileCount: number;
 }
 
 export interface PlateReading {

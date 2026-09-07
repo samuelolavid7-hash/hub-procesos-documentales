@@ -69,7 +69,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           <div role="status" className="flex items-center justify-center gap-2 border-b border-blue-200 bg-blue-50 px-4 py-2 text-center text-xs font-medium text-blue-800">
             <Icon name="info" className="h-4 w-4 shrink-0" />
-            <span>Prototipo con datos simulados: las acciones realizadas en esta versión no se guardan.</span>
+            <span>Las fotos reales se procesan únicamente en este navegador. La lectura de placas continúa en modo demostración y los cambios no se guardan.</span>
           </div>
 
           <main className="mx-auto w-full max-w-[1500px] px-4 py-7 sm:px-6 lg:px-8 lg:py-9">{children}</main>

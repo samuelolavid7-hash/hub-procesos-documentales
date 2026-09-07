@@ -2,13 +2,14 @@
 
 Plataforma interna para ejecutar procesos documentales regulatorios de forma guiada y consistente.
 
-## Estado de la Fase 1
+## Estado actual
 
 - **Expedientes Coljuegos:** flujo completo con carga, lectura de placas, agrupación asistida, validación y descargas simuladas.
+- **Ingesta real (Fase 2, bloque A):** selección o arrastre de carpetas, lectura local de JPG/JPEG/PNG/HEIC, metadatos EXIF y miniaturas de hasta 400 px.
 - **Declaraciones Juradas:** módulo visible, pendiente de definición funcional.
 - **GLI Argentina:** módulo visible, pendiente de definición funcional.
 
-Los datos actuales son simulados. No se guardan cambios al cerrar o recargar la aplicación.
+Las fotos reales se procesan solo en el navegador y no se guardan ni se envían a un servidor. La lectura de placas y los pasos posteriores continúan en modo demostración.
 
 ## Requisitos para ejecutar el proyecto
 
@@ -40,6 +41,7 @@ pnpm build
 app/
   procesos/
     coljuegos/
+      _components/           Componentes exclusivos del módulo Coljuegos
       _steps/                Pasos independientes del flujo
       coljuegos-flow.tsx     Estado interactivo del proceso
     declaraciones-juradas/   Módulo placeholder
@@ -47,7 +49,7 @@ app/
 components/
   shared/                     Componentes reutilizables entre procesos
 lib/
-  coljuegos/                  Tipos y contratos de integración futura
+  coljuegos/                  Tipos, reglas e ingesta local de fotografías
   mock/                       Datos simulados separados de la interfaz
 ```
 

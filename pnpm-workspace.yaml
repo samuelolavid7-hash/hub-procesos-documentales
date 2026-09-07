@@ -1,6 +1,9 @@
 packages:
   - "."
 
+allowBuilds:
+  unrs-resolver: true
+
 # Evita problemas de enlaces simbólicos dentro de carpetas sincronizadas por OneDrive.
 nodeLinker: hoisted
 
