@@ -1,13 +1,6 @@
-import type {
-  BatchMode,
-  IngestionProgress,
-  LocalBatch,
-  LocalOrderDraft,
-} from "@/lib/coljuegos/types";
+import type { IngestionProgress, LocalBatch, LocalOrderDraft } from "@/lib/coljuegos/types";
 
 export interface IngestionState {
-  mode: BatchMode;
-  demoLoaded: boolean;
   localBatch: LocalBatch | null;
   orderDraft: LocalOrderDraft;
   progress: IngestionProgress;
@@ -17,16 +10,9 @@ export type IngestionAction =
   | { type: "START_REAL_BATCH"; orderDraft: LocalOrderDraft }
   | { type: "UPDATE_PROGRESS"; progress: IngestionProgress }
   | { type: "COMPLETE_REAL_BATCH"; batch: LocalBatch }
-  | {
-    type: "UPDATE_ORDER";
-    field: "number" | "machineCount" | "modelCode" | "expectedSerialsText";
-    value: string;
-  }
-  | { type: "LOAD_DEMO" };
+  | { type: "UPDATE_ORDER"; patch: Partial<LocalOrderDraft> };
 
 export const initialIngestionState: IngestionState = {
-  mode: "none",
-  demoLoaded: false,
   localBatch: null,
   orderDraft: {
     folderName: "",
@@ -56,8 +42,6 @@ export function ingestionReducer(
     case "START_REAL_BATCH":
       return {
         ...state,
-        mode: "real",
-        demoLoaded: false,
         localBatch: null,
         orderDraft: action.orderDraft,
         progress: {
@@ -74,13 +58,7 @@ export function ingestionReducer(
     case "UPDATE_ORDER":
       return {
         ...state,
-        orderDraft: { ...state.orderDraft, [action.field]: action.value },
-      };
-    case "LOAD_DEMO":
-      return {
-        ...initialIngestionState,
-        mode: "demo",
-        demoLoaded: true,
+        orderDraft: { ...state.orderDraft, ...action.patch },
       };
     default:
       return state;

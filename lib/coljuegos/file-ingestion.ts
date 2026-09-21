@@ -12,7 +12,6 @@ const acceptedExtensions = new Set<LocalPhotoExtension>([
   "jpg",
   "jpeg",
   "png",
-  "heic",
 ]);
 
 const thumbnailMaximumSide = 400;
@@ -135,7 +134,7 @@ export async function ingestLocalFiles({
     folderName,
     photos,
     errors,
-    hasHeic: supportedFiles.some(({ extension }) => extension === "heic"),
+    hasHeic: false,
     ignoredFileCount: files.length - supportedFiles.length,
   };
 }
@@ -166,15 +165,6 @@ async function processPhoto(
     timestampSource: exifDate ? "exif" : "file",
     orientation: metadata?.Orientation,
   };
-
-  if (extension === "heic") {
-    return {
-      ...basePhoto,
-      thumbnailUrl: null,
-      processingStatus: "warning",
-      warning: "El navegador podría no previsualizar esta foto HEIC. Convierte una copia a JPG o PNG antes de generar el PDF.",
-    };
-  }
 
   try {
     const thumbnail = await createThumbnail(file, metadata?.Orientation ?? 1);

@@ -8,7 +8,7 @@ export type AssignablePhotoType = Exclude<PhotoType, "placa">;
 
 export type PhotoQuality = "correcta" | "borrosa";
 
-export type LocalPhotoExtension = "jpg" | "jpeg" | "png" | "heic";
+export type LocalPhotoExtension = "jpg" | "jpeg" | "png";
 
 export type PhotoTimestampSource = "exif" | "file";
 
@@ -171,4 +171,66 @@ export interface SimulatedBatchUpload {
   totalSize: string;
   imageFormats: string[];
   sourceLabel: string;
+}
+
+/* Tipos del flujo real. Se incorporan de forma gradual durante los bloques B-D. */
+export type TipoVista = PhotoType;
+
+export interface OrdenServicio {
+  numero: string;
+  nombreCarpeta: string;
+  cantidadMaquinas: number;
+  codigoModelo: string;
+  nombreModelo?: string;
+  serialesEsperados: string[];
+}
+
+export interface FotoLote {
+  id: string;
+  archivoOriginal: File;
+  nombreArchivo: string;
+  rutaRelativa: string;
+  extension: LocalPhotoExtension;
+  tamanoBytes: number;
+  miniaturaUrl: string | null;
+  fechaCaptura: string;
+  origenFecha: "exif" | "archivo";
+  ordenAproximado: boolean;
+  orientacionExif?: number;
+  anchoOriginal?: number;
+  altoOriginal?: number;
+  tipoSugerido?: TipoVista;
+  estado: "lista" | "advertencia" | "error";
+  mensaje?: string;
+}
+
+export interface FotosDelGrupo {
+  placa: string | null;
+  frontal: string | null;
+  lateralIzquierda: string | null;
+  lateralDerecha: string | null;
+}
+
+export interface GrupoFotografico {
+  id: string;
+  numeroGrupo: number;
+  fotos: FotosDelGrupo;
+  serialAsignado: string | null;
+  confirmado: boolean;
+  origen: "propuesto" | "corregido-manualmente";
+}
+
+export interface ErrorDeProceso {
+  etapa: "ingesta" | "miniatura" | "pdf" | "zip";
+  archivo?: string;
+  serial?: string;
+  mensaje: string;
+}
+
+export interface LoteFotografico {
+  orden: OrdenServicio;
+  fotos: FotoLote[];
+  grupos: GrupoFotografico[];
+  fotosSinAgrupar: string[];
+  errores: ErrorDeProceso[];
 }

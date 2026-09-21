@@ -2,56 +2,33 @@
 
 import { useEffect, useReducer, useRef, useState } from "react";
 import { LoadBatchStep } from "@/app/procesos/coljuegos/_steps/cargar-lote";
-import { PlateReadingStep } from "@/app/procesos/coljuegos/_steps/lectura-placas";
-import { AssistedGroupingStep } from "@/app/procesos/coljuegos/_steps/agrupacion-asistida";
-import { ValidationDownloadStep } from "@/app/procesos/coljuegos/_steps/validacion-descarga";
-import { ProcessHeader } from "@/components/shared/process-header";
-import { Stepper } from "@/components/shared/stepper";
-import { useToast } from "@/components/shared/toast";
+import { OrderDataStep } from "@/app/procesos/coljuegos/_steps/datos-orden";
 import {
   initialIngestionState,
   ingestionReducer,
 } from "@/app/procesos/coljuegos/ingestion-reducer";
+import { Button } from "@/components/shared/button";
+import { Icon } from "@/components/shared/icons";
+import { ProcessHeader } from "@/components/shared/process-header";
+import { Stepper } from "@/components/shared/stepper";
+import { useToast } from "@/components/shared/toast";
 import {
   ingestLocalFiles,
   parseShellOrderFolderName,
   revokePhotoThumbnails,
 } from "@/lib/coljuegos/file-ingestion";
-import type {
-  AssignablePhotoType,
-  BatchPhoto,
-  MachineAssignment,
-  PlateReading,
-  LocalOrderDraft,
-  ShellOrder,
-  SimulatedBatchUpload,
-} from "@/lib/coljuegos/types";
-import { coljuegosFlowSteps } from "@/lib/mock/coljuegos";
+import type { LocalOrderDraft } from "@/lib/coljuegos/types";
 
-interface ColjuegosFlowProps {
-  shellOrder: ShellOrder;
-  simulatedBatch: SimulatedBatchUpload;
-  plateReadings: PlateReading[];
-  photos: BatchPhoto[];
-  initialAssignments: MachineAssignment[];
-}
+const flowSteps = [
+  "Datos de la SO",
+  "Cargar fotos",
+  "Agrupación y seriales",
+  "Exportar",
+];
 
-const assignmentFieldByType: Record<AssignablePhotoType, "frontPhotoId" | "leftPhotoId" | "rightPhotoId"> = {
-  frontal: "frontPhotoId",
-  "lateral-izquierda": "leftPhotoId",
-  "lateral-derecha": "rightPhotoId",
-};
-
-export function ColjuegosFlow({
-  shellOrder,
-  simulatedBatch,
-  plateReadings,
-  photos,
-  initialAssignments,
-}: ColjuegosFlowProps) {
+export function ColjuegosFlow() {
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
   const [ingestion, dispatchIngestion] = useReducer(ingestionReducer, initialIngestionState);
-  const [assignments, setAssignments] = useState(initialAssignments);
   const isMounted = useRef(true);
   const { showToast } = useToast();
 
@@ -67,35 +44,37 @@ export function ColjuegosFlow({
     return () => revokePhotoThumbnails(photos);
   }, [ingestion.localBatch]);
 
-  function handleLoadDemo() {
-    dispatchIngestion({ type: "LOAD_DEMO" });
-    setAssignments(initialAssignments);
-    showToast({
-      title: "Lote cargado",
-      description: `${simulatedBatch.fileCount} fotografías simuladas están listas para procesar.`,
-      tone: "success",
+  function handleFolderNameChange(value: string) {
+    const detectedOrder = parseShellOrderFolderName(value);
+    dispatchIngestion({
+      type: "UPDATE_ORDER",
+      patch: detectedOrder
+        ? {
+          folderName: value,
+          number: detectedOrder.number,
+          machineCount: String(detectedOrder.machineCount),
+          modelCode: detectedOrder.modelCode,
+          dataSource: "folder-name",
+        }
+        : {
+          folderName: value,
+          dataSource: "manual",
+        },
     });
   }
 
   async function handleFilesSelected(files: File[], folderName: string) {
     const detectedOrder = parseShellOrderFolderName(folderName);
-    const orderDraft: LocalOrderDraft = detectedOrder
-      ? {
-        folderName: detectedOrder.folderName,
-        number: detectedOrder.number,
-        machineCount: String(detectedOrder.machineCount),
-        modelCode: detectedOrder.modelCode,
-        expectedSerialsText: "",
-        dataSource: "folder-name",
-      }
-      : {
-        folderName,
-        number: "",
-        machineCount: "",
-        modelCode: "",
-        expectedSerialsText: "",
-        dataSource: "manual",
-      };
+    const orderDraft: LocalOrderDraft = {
+      ...ingestion.orderDraft,
+      folderName,
+      number: detectedOrder?.number ?? ingestion.orderDraft.number,
+      machineCount: detectedOrder
+        ? String(detectedOrder.machineCount)
+        : ingestion.orderDraft.machineCount,
+      modelCode: detectedOrder?.modelCode ?? ingestion.orderDraft.modelCode,
+      dataSource: detectedOrder ? "folder-name" : "manual",
+    };
 
     dispatchIngestion({ type: "START_REAL_BATCH", orderDraft });
 
@@ -104,7 +83,9 @@ export function ColjuegosFlow({
         files,
         folderName,
         onProgress: (progress) => {
-          if (isMounted.current) dispatchIngestion({ type: "UPDATE_PROGRESS", progress });
+          if (isMounted.current) {
+            dispatchIngestion({ type: "UPDATE_PROGRESS", progress });
+          }
         },
       });
 
@@ -117,144 +98,77 @@ export function ColjuegosFlow({
       showToast({
         title: batch.photos.length > 0 ? "Carpeta procesada" : "No encontramos fotos compatibles",
         description: batch.photos.length > 0
-          ? `${batch.photos.length} fotos quedaron listas para revisar en el navegador.`
-          : "Usa archivos JPG, JPEG, PNG o HEIC.",
+          ? `${batch.photos.length} fotos quedaron listas y ordenadas cronológicamente.`
+          : "Usa archivos JPG, JPEG o PNG.",
         tone: batch.photos.length > 0 ? "success" : "info",
       });
     } catch {
       if (!isMounted.current) return;
       dispatchIngestion({
         type: "UPDATE_PROGRESS",
-        progress: { status: "completed-with-errors", processed: 0, total: 0, errorCount: 1 },
+        progress: {
+          status: "completed-with-errors",
+          processed: 0,
+          total: 0,
+          errorCount: 1,
+        },
       });
       showToast({
         title: "No pudimos procesar la carpeta",
-        description: "Vuelve a seleccionarla. Las demás funciones siguen disponibles.",
+        description: "Vuelve a seleccionarla. Ninguna foto fue enviada fuera del navegador.",
         tone: "info",
       });
     }
   }
 
-  function handleProcessBatch() {
-    if (!ingestion.demoLoaded || ingestion.mode !== "demo") return;
-
-    // TODO: integración real — enviar las imágenes al servicio de lectura y clasificación.
-    setCurrentStep(2);
-    showToast({
-      title: "Procesamiento simulado completo",
-      description: "El lote está listo para la lectura de placas.",
-      tone: "success",
-    });
-  }
-
-  function handlePrepareGrouping() {
-    setCurrentStep(3);
-    showToast({
-      title: "Lectura revisada",
-      description: "Los resultados están listos para la agrupación asistida.",
-      tone: "success",
-    });
-  }
-
-  function handleAssignPhoto(
-    serial: string,
-    type: AssignablePhotoType,
-    photoId: string,
-  ) {
-    const field = assignmentFieldByType[type];
-    setAssignments((current) => current.map((assignment) =>
-      assignment.serial === serial
-        ? { ...assignment, [field]: photoId }
-        : assignment,
-    ));
-    const photo = photos.find((candidate) => candidate.id === photoId);
-    showToast({
-      title: "Foto reasignada",
-      description: `${photo?.fileName ?? "La fotografía"} se asignó a ${serial}.`,
-      tone: "success",
-    });
-  }
-
-  function handlePrepareValidation() {
-    setCurrentStep(4);
-    showToast({
-      title: "Validación preparada",
-      description: "La clasificación final y las exclusiones están listas para revisar.",
-      tone: "success",
-    });
-  }
-
-  function handleDownloadReport() {
-    // TODO: integración real — generar y descargar el reporte de incidencias.
-    showToast({
-      title: "Reporte simulado preparado",
-      description: "El reporte incluiría todas las incidencias y exclusiones de la SO.",
-      tone: "success",
-    });
-  }
-
-  function handleDownloadZip(completeCount: number) {
-    // TODO: integración real — generar los PDF y comprimirlos en un archivo ZIP.
-    showToast({
-      title: "Paquete ZIP simulado preparado",
-      description: `${completeCount} expedientes completos serían incluidos en la descarga.`,
-      tone: "success",
-    });
-  }
-
   return (
     <div className="space-y-8">
       <ProcessHeader
-        eyebrow="Colombia · Coljuegos"
-        title="Expedientes fotográficos"
         description="Organiza las fotografías del lote y prepara un expediente regulatorio por cada máquina."
+        eyebrow="Colombia · Coljuegos"
         status="Activo"
+        title="Expedientes fotográficos"
       />
 
-      <Stepper steps={coljuegosFlowSteps} currentStep={currentStep} />
+      <Stepper currentStep={currentStep} steps={flowSteps} />
 
       {currentStep === 1 ? (
-        <LoadBatchStep
-          shellOrder={shellOrder}
-          simulatedBatch={simulatedBatch}
-          mode={ingestion.mode}
-          demoLoaded={ingestion.demoLoaded}
-          localBatch={ingestion.localBatch}
-          orderDraft={ingestion.orderDraft}
-          progress={ingestion.progress}
-          onFilesSelected={(files, folderName) => void handleFilesSelected(files, folderName)}
-          onOrderDraftChange={(field, value) => dispatchIngestion({ type: "UPDATE_ORDER", field, value })}
-          onLoadDemo={handleLoadDemo}
-          onProcessDemo={handleProcessBatch}
+        <OrderDataStep
+          draft={ingestion.orderDraft}
+          onChange={(patch) => dispatchIngestion({ type: "UPDATE_ORDER", patch })}
+          onContinue={() => setCurrentStep(2)}
+          onFolderNameChange={handleFolderNameChange}
         />
       ) : currentStep === 2 ? (
-        <PlateReadingStep
-          shellOrder={shellOrder}
-          readings={plateReadings}
+        <LoadBatchStep
+          batch={ingestion.localBatch}
           onBack={() => setCurrentStep(1)}
-          onContinue={handlePrepareGrouping}
-        />
-      ) : currentStep === 3 ? (
-        <AssistedGroupingStep
-          shellOrder={shellOrder}
-          readings={plateReadings}
-          photos={photos}
-          assignments={assignments}
-          onBack={() => setCurrentStep(2)}
-          onContinue={handlePrepareValidation}
-          onAssignPhoto={handleAssignPhoto}
+          onContinue={() => setCurrentStep(3)}
+          onFilesSelected={(files, folderName) => void handleFilesSelected(files, folderName)}
+          orderDraft={ingestion.orderDraft}
+          progress={ingestion.progress}
         />
       ) : (
-        <ValidationDownloadStep
-          shellOrder={shellOrder}
-          readings={plateReadings}
-          photos={photos}
-          assignments={assignments}
-          onBack={() => setCurrentStep(3)}
-          onDownloadReport={handleDownloadReport}
-          onDownloadZip={handleDownloadZip}
-        />
+        <PendingNextBlock onBack={() => setCurrentStep(2)} />
       )}
     </div>
+  );
+}
+
+function PendingNextBlock({ onBack }: { onBack: () => void }) {
+  return (
+    <section className="grid min-h-96 place-items-center rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+      <div className="max-w-lg">
+        <span className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-teal-50 text-teal-700">
+          <Icon name="check" className="h-8 w-8" />
+        </span>
+        <p className="mt-5 text-xs font-bold uppercase tracking-[0.16em] text-teal-700">Bloque (a) completo</p>
+        <h2 className="mt-2 text-2xl font-bold text-slate-950">El lote está listo para agrupar</h2>
+        <p className="mt-3 text-sm leading-6 text-slate-600">
+          En el siguiente bloque construiremos los grupos cronológicos de cuatro fotos y la asignación manual de seriales. Tus pruebas actuales no activan ninguna lectura con IA.
+        </p>
+        <Button className="mt-6" onClick={onBack} variant="secondary">Volver a revisar las fotos</Button>
+      </div>
+    </section>
   );
 }

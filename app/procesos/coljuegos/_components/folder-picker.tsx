@@ -88,7 +88,7 @@ export function FolderPicker({ disabled = false, onFilesSelected }: FolderPicker
           ref={inputRef}
           className="sr-only"
           type="file"
-          accept=".jpg,.jpeg,.png,.heic,image/jpeg,image/png,image/heic"
+          accept=".jpg,.jpeg,.png,image/jpeg,image/png"
           multiple
           onChange={handleInputChange}
           {...({ webkitdirectory: "" } as Record<string, string>)}
@@ -101,7 +101,7 @@ export function FolderPicker({ disabled = false, onFilesSelected }: FolderPicker
           <Icon name="folder" className="h-4 w-4" />
           Seleccionar carpeta
         </Button>
-        <p className="mt-3 text-xs text-slate-400">Formatos admitidos: JPG, JPEG, PNG y HEIC</p>
+        <p className="mt-3 text-xs text-slate-400">Formatos admitidos: JPG, JPEG y PNG</p>
       </div>
     </div>
   );
