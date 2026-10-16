@@ -45,7 +45,7 @@ export function LoadBatchStep({
           </p>
         </div>
         <Button disabled={isProcessing} onClick={onBack} variant="secondary">
-          Volver a datos de la SO
+          Volver a datos del lote
         </Button>
       </div>
 
@@ -56,7 +56,7 @@ export function LoadBatchStep({
           <div className="flex items-start justify-between gap-4">
             <div>
               <h3 className="text-lg font-bold text-slate-900">Carpeta de fotografías</h3>
-              <p className="mt-1 text-sm text-slate-500">Formatos admitidos: JPG, JPEG y PNG.</p>
+              <p className="mt-1 text-sm text-slate-500">Formatos admitidos: JPG, JPEG, PNG, HEIC y HEIF.</p>
             </div>
             <StatusBadge status={hasPhotos ? "Cargado" : "Pendiente"} />
           </div>
@@ -112,18 +112,21 @@ export function LoadBatchStep({
 }
 
 function OrderSummary({ draft }: { draft: LocalOrderDraft }) {
+  const hasKnownOrder = draft.mode === "with-order";
   return (
     <aside className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">Orden activa</p>
-      <h3 className="mt-1 text-xl font-bold text-slate-900">SO {draft.number}</h3>
+      <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">Lote activo</p>
+      <h3 className="mt-1 text-xl font-bold text-slate-900">{hasKnownOrder ? `SO ${draft.number}` : "Máquinas usadas · sin SO"}</h3>
       <dl className="mt-5 space-y-4">
-        <SummaryDatum label="Carpeta" value={draft.folderName} />
-        <SummaryDatum label="Modelo" value={draft.modelCode} />
-        <SummaryDatum label="Máquinas" value={draft.machineCount} />
+        <SummaryDatum label="Carpeta" value={draft.folderName || "Se definirá al cargar"} />
+        <SummaryDatum label="Modelo" value={draft.modelCode || "No indicado"} />
+        <SummaryDatum label="Máquinas" value={draft.machineCount || "Se calculará con las fotos"} />
       </dl>
-      <div className="mt-5 rounded-lg bg-blue-50 p-3 text-xs leading-5 text-blue-800">
-        Si la carpeta seleccionada tiene un nombre válido diferente, actualizaremos automáticamente estos datos sin borrar los seriales pegados.
-      </div>
+      {hasKnownOrder ? (
+        <div className="mt-5 rounded-lg bg-blue-50 p-3 text-xs leading-5 text-blue-800">
+          Si la carpeta seleccionada tiene un nombre válido diferente, actualizaremos automáticamente estos datos sin borrar los seriales pegados.
+        </div>
+      ) : null}
     </aside>
   );
 }
@@ -170,6 +173,15 @@ function BatchSummary({ batch }: { batch: LocalBatch }) {
               <li key={`${error.fileName}-${error.message}`}><strong>{error.fileName}:</strong> {error.message}</li>
             ))}
           </ul>
+        </div>
+      ) : null}
+
+      {batch.heicConvertedCount > 0 ? (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+          <p className="text-xs font-bold text-blue-900">
+            {batch.heicConvertedCount} {batch.heicConvertedCount === 1 ? "foto HEIC/HEIF convertida" : "fotos HEIC/HEIF convertidas"}
+          </p>
+          <p className="mt-1 text-xs text-blue-800">La conversión a JPEG se realizó localmente y los originales no salieron de este equipo.</p>
         </div>
       ) : null}
     </div>

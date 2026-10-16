@@ -8,7 +8,7 @@ export type AssignablePhotoType = Exclude<PhotoType, "placa">;
 
 export type PhotoQuality = "correcta" | "borrosa";
 
-export type LocalPhotoExtension = "jpg" | "jpeg" | "png";
+export type LocalPhotoExtension = "jpg" | "jpeg" | "png" | "heic" | "heif";
 
 export type PhotoTimestampSource = "exif" | "file";
 
@@ -64,8 +64,8 @@ export interface BatchPhoto {
 }
 
 /**
- * Una foto real conserva el File original sin leer todos sus bytes. La UI usa
- * únicamente thumbnailUrl, que apunta a una miniatura comprimida de 400 px.
+ * Una foto real conserva un File de trabajo sin leer todos sus bytes. Para HEIC
+ * este File es el JPEG convertido localmente; la UI usa una miniatura de 400 px.
  */
 export interface LocalBatchPhoto {
   source: "local";
@@ -78,11 +78,14 @@ export interface LocalBatchPhoto {
   lastModified: number;
   capturedAt: string;
   timestampSource: PhotoTimestampSource;
+  /** Vista propuesta según la posición cronológica dentro del lote. */
+  suggestedType?: PhotoType;
   orientation?: number;
   originalWidth?: number;
   originalHeight?: number;
   thumbnailUrl: string | null;
   processingStatus: LocalPhotoProcessingStatus;
+  convertedFromHeic?: boolean;
   warning?: string;
   error?: string;
 }
@@ -108,6 +111,7 @@ export interface DetectedShellOrder {
 }
 
 export interface LocalOrderDraft {
+  mode: "with-order" | "without-order";
   folderName: string;
   number: string;
   machineCount: string;
@@ -121,6 +125,7 @@ export interface LocalBatch {
   photos: LocalBatchPhoto[];
   errors: PhotoProcessingError[];
   hasHeic: boolean;
+  heicConvertedCount: number;
   ignoredFileCount: number;
 }
 
@@ -219,6 +224,8 @@ export interface GrupoFotografico {
   confirmado: boolean;
   origen: "propuesto" | "corregido-manualmente";
 }
+
+export type CampoFotoGrupo = keyof FotosDelGrupo;
 
 export interface ErrorDeProceso {
   etapa: "ingesta" | "miniatura" | "pdf" | "zip";

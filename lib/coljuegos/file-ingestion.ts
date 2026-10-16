@@ -1,4 +1,5 @@
 import { parse } from "exifr";
+import { convertHeicToJpeg } from "@/lib/coljuegos/heic-conversion";
 import type {
   DetectedShellOrder,
   IngestionProgress,
@@ -6,16 +7,25 @@ import type {
   LocalBatchPhoto,
   LocalPhotoExtension,
   PhotoProcessingError,
+  PhotoType,
 } from "@/lib/coljuegos/types";
 
 const acceptedExtensions = new Set<LocalPhotoExtension>([
   "jpg",
   "jpeg",
   "png",
+  "heic",
+  "heif",
 ]);
 
 const thumbnailMaximumSide = 400;
 const ingestionBatchSize = 10;
+const suggestedTypes: PhotoType[] = [
+  "placa",
+  "frontal",
+  "lateral-izquierda",
+  "lateral-derecha",
+];
 
 interface ExifMetadata {
   DateTimeOriginal?: Date | string;
@@ -102,6 +112,13 @@ export async function ingestLocalFiles({
 
   for (let index = 0; index < supportedFiles.length; index += 1) {
     const { file, extension } = supportedFiles[index];
+    onProgress({
+      status: "running",
+      processed: index,
+      total: supportedFiles.length,
+      currentFile: file.name,
+      errorCount: errors.length,
+    });
     const photo = await processPhoto(file, extension, index);
     photos.push(photo);
 
@@ -123,6 +140,16 @@ export async function ingestLocalFiles({
   }
 
   photos.sort((first, second) => first.capturedAt.localeCompare(second.capturedAt));
+  let readyPhotoIndex = 0;
+  const classifiedPhotos = photos.map((photo) => {
+    if (photo.processingStatus === "error") return photo;
+    const classifiedPhoto = {
+      ...photo,
+      suggestedType: suggestedTypes[readyPhotoIndex % suggestedTypes.length],
+    };
+    readyPhotoIndex += 1;
+    return classifiedPhoto;
+  });
   onProgress({
     status: errors.length > 0 ? "completed-with-errors" : "completed",
     processed: supportedFiles.length,
@@ -132,9 +159,10 @@ export async function ingestLocalFiles({
 
   return {
     folderName,
-    photos,
+    photos: classifiedPhotos,
     errors,
-    hasHeic: false,
+    hasHeic: supportedFiles.some(({ extension }) => extension === "heic" || extension === "heif"),
+    heicConvertedCount: classifiedPhotos.filter((photo) => photo.convertedFromHeic).length,
     ignoredFileCount: files.length - supportedFiles.length,
   };
 }
@@ -152,7 +180,64 @@ async function processPhoto(
   }
 
   const exifDate = normalizeExifDate(metadata?.DateTimeOriginal);
+  const isHeic = extension === "heic" || extension === "heif";
+  let workingFile = file;
+  if (isHeic) {
+    try {
+      workingFile = await convertHeicToJpeg(file);
+    } catch {
+      return createFailedPhoto(file, extension, index, exifDate, metadata?.Orientation, "No se pudo convertir la foto HEIC/HEIF a JPEG.");
+    }
+  }
+
   const basePhoto: Omit<LocalBatchPhoto, "thumbnailUrl" | "processingStatus"> = {
+    source: "local",
+    id: createPhotoId(file, index),
+    file: workingFile,
+    fileName: file.name,
+    relativePath: file.webkitRelativePath || file.name,
+    extension,
+    sizeBytes: file.size,
+    lastModified: file.lastModified,
+    capturedAt: (exifDate ?? new Date(file.lastModified)).toISOString(),
+    timestampSource: exifDate ? "exif" : "file",
+    orientation: isHeic ? 1 : metadata?.Orientation,
+    convertedFromHeic: isHeic,
+  };
+
+  try {
+    const thumbnail = await resizeImageToJpeg(workingFile, isHeic ? 1 : metadata?.Orientation ?? 1);
+    const warnings = [
+      isHeic ? "Foto HEIC/HEIF convertida localmente a JPEG." : null,
+      exifDate ? null : "Fecha tomada de la modificación del archivo; no se encontró DateTimeOriginal en EXIF.",
+    ].filter(Boolean);
+    return {
+      ...basePhoto,
+      originalWidth: thumbnail.originalWidth,
+      originalHeight: thumbnail.originalHeight,
+      thumbnailUrl: URL.createObjectURL(thumbnail.blob),
+      processingStatus: warnings.length ? "warning" : "ready",
+      warning: warnings.length ? warnings.join(" ") : undefined,
+    };
+  } catch {
+    return {
+      ...basePhoto,
+      thumbnailUrl: null,
+      processingStatus: "error",
+      error: "No se pudo leer la imagen o generar su miniatura.",
+    };
+  }
+}
+
+function createFailedPhoto(
+  file: File,
+  extension: LocalPhotoExtension,
+  index: number,
+  exifDate: Date | null,
+  orientation: number | undefined,
+  message: string,
+): LocalBatchPhoto {
+  return {
     source: "local",
     id: createPhotoId(file, index),
     file,
@@ -163,29 +248,12 @@ async function processPhoto(
     lastModified: file.lastModified,
     capturedAt: (exifDate ?? new Date(file.lastModified)).toISOString(),
     timestampSource: exifDate ? "exif" : "file",
-    orientation: metadata?.Orientation,
+    orientation,
+    convertedFromHeic: false,
+    thumbnailUrl: null,
+    processingStatus: "error",
+    error: message,
   };
-
-  try {
-    const thumbnail = await createThumbnail(file, metadata?.Orientation ?? 1);
-    return {
-      ...basePhoto,
-      originalWidth: thumbnail.originalWidth,
-      originalHeight: thumbnail.originalHeight,
-      thumbnailUrl: URL.createObjectURL(thumbnail.blob),
-      processingStatus: exifDate ? "ready" : "warning",
-      warning: exifDate
-        ? undefined
-        : "Fecha tomada de la modificación del archivo; no se encontró DateTimeOriginal en EXIF.",
-    };
-  } catch {
-    return {
-      ...basePhoto,
-      thumbnailUrl: null,
-      processingStatus: "error",
-      error: "No se pudo leer la imagen o generar su miniatura.",
-    };
-  }
 }
 
 function normalizeExifDate(value: Date | string | undefined): Date | null {
@@ -198,16 +266,18 @@ function createPhotoId(file: File, index: number): string {
   return `${file.webkitRelativePath || file.name}-${file.size}-${file.lastModified}-${index}`;
 }
 
-async function createThumbnail(
+export async function resizeImageToJpeg(
   file: File,
   orientation: number,
+  maximumSide = thumbnailMaximumSide,
+  quality = 0.82,
 ): Promise<{ blob: Blob; originalWidth: number; originalHeight: number }> {
   const decoded = await decodeImage(file);
   const appliedOrientation = decoded.orientationAlreadyApplied ? 1 : orientation;
   const swapsDimensions = appliedOrientation >= 5 && appliedOrientation <= 8;
   const orientedWidth = swapsDimensions ? decoded.height : decoded.width;
   const orientedHeight = swapsDimensions ? decoded.width : decoded.height;
-  const scale = Math.min(1, thumbnailMaximumSide / Math.max(orientedWidth, orientedHeight));
+  const scale = Math.min(1, maximumSide / Math.max(orientedWidth, orientedHeight));
   const drawWidth = Math.max(1, Math.round(decoded.width * scale));
   const drawHeight = Math.max(1, Math.round(decoded.height * scale));
   const canvas = document.createElement("canvas");
@@ -224,10 +294,12 @@ async function createThumbnail(
   context.fillRect(0, 0, canvas.width, canvas.height);
   applyExifOrientation(context, appliedOrientation, drawWidth, drawHeight);
   context.drawImage(decoded.source, 0, 0, drawWidth, drawHeight);
+  const originalWidth = decoded.width;
+  const originalHeight = decoded.height;
   decoded.close();
 
-  const blob = await canvasToBlob(canvas);
-  return { blob, originalWidth: decoded.width, originalHeight: decoded.height };
+  const blob = await canvasToBlob(canvas, quality);
+  return { blob, originalWidth, originalHeight };
 }
 
 async function decodeImage(file: File): Promise<DecodedImage> {
@@ -282,12 +354,12 @@ function applyExifOrientation(
   if (transform) context.setTransform(...transform);
 }
 
-function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+function canvasToBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
   return new Promise((resolve, reject) => {
     canvas.toBlob(
       (blob) => blob ? resolve(blob) : reject(new Error("No se pudo comprimir la miniatura")),
       "image/jpeg",
-      0.82,
+      quality,
     );
   });
 }

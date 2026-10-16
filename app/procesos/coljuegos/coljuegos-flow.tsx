@@ -3,24 +3,26 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import { LoadBatchStep } from "@/app/procesos/coljuegos/_steps/cargar-lote";
 import { OrderDataStep } from "@/app/procesos/coljuegos/_steps/datos-orden";
+import { RealExportStep } from "@/app/procesos/coljuegos/_steps/exportacion-real";
+import { RealGroupingStep } from "@/app/procesos/coljuegos/_steps/agrupacion-real";
 import {
   initialIngestionState,
   ingestionReducer,
 } from "@/app/procesos/coljuegos/ingestion-reducer";
-import { Button } from "@/components/shared/button";
-import { Icon } from "@/components/shared/icons";
 import { ProcessHeader } from "@/components/shared/process-header";
 import { Stepper } from "@/components/shared/stepper";
 import { useToast } from "@/components/shared/toast";
 import {
   ingestLocalFiles,
+  normalizeSerials,
   parseShellOrderFolderName,
   revokePhotoThumbnails,
 } from "@/lib/coljuegos/file-ingestion";
-import type { LocalOrderDraft } from "@/lib/coljuegos/types";
+import { createGroupingProposal } from "@/lib/coljuegos/grouping";
+import type { CampoFotoGrupo, GrupoFotografico, LocalOrderDraft } from "@/lib/coljuegos/types";
 
 const flowSteps = [
-  "Datos de la SO",
+  "Datos del lote",
   "Cargar fotos",
   "Agrupación y seriales",
   "Exportar",
@@ -29,6 +31,8 @@ const flowSteps = [
 export function ColjuegosFlow() {
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
   const [ingestion, dispatchIngestion] = useReducer(ingestionReducer, initialIngestionState);
+  const [groups, setGroups] = useState<GrupoFotografico[]>([]);
+  const [ungroupedPhotoIds, setUngroupedPhotoIds] = useState<string[]>([]);
   const isMounted = useRef(true);
   const { showToast } = useToast();
 
@@ -45,6 +49,10 @@ export function ColjuegosFlow() {
   }, [ingestion.localBatch]);
 
   function handleFolderNameChange(value: string) {
+    if (ingestion.orderDraft.mode === "without-order") {
+      dispatchIngestion({ type: "UPDATE_ORDER", patch: { folderName: value } });
+      return;
+    }
     const detectedOrder = parseShellOrderFolderName(value);
     dispatchIngestion({
       type: "UPDATE_ORDER",
@@ -64,7 +72,9 @@ export function ColjuegosFlow() {
   }
 
   async function handleFilesSelected(files: File[], folderName: string) {
-    const detectedOrder = parseShellOrderFolderName(folderName);
+    const detectedOrder = ingestion.orderDraft.mode === "with-order"
+      ? parseShellOrderFolderName(folderName)
+      : null;
     const orderDraft: LocalOrderDraft = {
       ...ingestion.orderDraft,
       folderName,
@@ -77,6 +87,8 @@ export function ColjuegosFlow() {
     };
 
     dispatchIngestion({ type: "START_REAL_BATCH", orderDraft });
+    setGroups([]);
+    setUngroupedPhotoIds([]);
 
     try {
       const batch = await ingestLocalFiles({
@@ -121,6 +133,46 @@ export function ColjuegosFlow() {
     }
   }
 
+  function prepareGrouping() {
+    if (!ingestion.localBatch) return;
+    if (groups.length > 0) {
+      setCurrentStep(3);
+      return;
+    }
+    const proposal = createGroupingProposal(ingestion.localBatch.photos);
+    setGroups(proposal.groups);
+    setUngroupedPhotoIds(proposal.ungroupedPhotoIds);
+    setCurrentStep(3);
+  }
+
+  function assignSerial(groupId: string, serial: string | null) {
+    setGroups((currentGroups) => currentGroups.map((group) => (
+      group.id === groupId ? { ...group, serialAsignado: serial, confirmado: false } : group
+    )));
+  }
+
+  function assignPhoto(groupId: string, field: CampoFotoGrupo, photoId: string) {
+    setGroups((currentGroups) => currentGroups.map((group) => (
+      group.id === groupId
+        ? {
+          ...group,
+          fotos: { ...group.fotos, [field]: photoId },
+          confirmado: false,
+          origen: "corregido-manualmente",
+        }
+        : group
+    )));
+  }
+
+  function confirmGroup(groupId: string) {
+    setGroups((currentGroups) => currentGroups.map((group) => (
+      group.id === groupId ? { ...group, confirmado: true } : group
+    )));
+  }
+
+  const expectedSerials = normalizeSerials(ingestion.orderDraft.expectedSerialsText);
+  const photos = ingestion.localBatch?.photos ?? [];
+
   return (
     <div className="space-y-8">
       <ProcessHeader
@@ -143,32 +195,32 @@ export function ColjuegosFlow() {
         <LoadBatchStep
           batch={ingestion.localBatch}
           onBack={() => setCurrentStep(1)}
-          onContinue={() => setCurrentStep(3)}
+          onContinue={prepareGrouping}
           onFilesSelected={(files, folderName) => void handleFilesSelected(files, folderName)}
           orderDraft={ingestion.orderDraft}
           progress={ingestion.progress}
         />
+      ) : currentStep === 3 ? (
+        <RealGroupingStep
+          allowManualSerials={ingestion.orderDraft.mode === "without-order"}
+          expectedSerials={expectedSerials}
+          groups={groups}
+          onAssignPhoto={assignPhoto}
+          onAssignSerial={assignSerial}
+          onBack={() => setCurrentStep(2)}
+          onConfirmGroup={confirmGroup}
+          onContinue={() => setCurrentStep(4)}
+          photos={photos}
+          ungroupedPhotoIds={ungroupedPhotoIds}
+        />
       ) : (
-        <PendingNextBlock onBack={() => setCurrentStep(2)} />
+        <RealExportStep
+          groups={groups}
+          onBack={() => setCurrentStep(3)}
+          order={ingestion.orderDraft}
+          photos={photos}
+        />
       )}
     </div>
-  );
-}
-
-function PendingNextBlock({ onBack }: { onBack: () => void }) {
-  return (
-    <section className="grid min-h-96 place-items-center rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-      <div className="max-w-lg">
-        <span className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-teal-50 text-teal-700">
-          <Icon name="check" className="h-8 w-8" />
-        </span>
-        <p className="mt-5 text-xs font-bold uppercase tracking-[0.16em] text-teal-700">Bloque (a) completo</p>
-        <h2 className="mt-2 text-2xl font-bold text-slate-950">El lote está listo para agrupar</h2>
-        <p className="mt-3 text-sm leading-6 text-slate-600">
-          En el siguiente bloque construiremos los grupos cronológicos de cuatro fotos y la asignación manual de seriales. Tus pruebas actuales no activan ninguna lectura con IA.
-        </p>
-        <Button className="mt-6" onClick={onBack} variant="secondary">Volver a revisar las fotos</Button>
-      </div>
-    </section>
   );
 }

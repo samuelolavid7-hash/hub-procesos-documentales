@@ -15,6 +15,7 @@ export type IngestionAction =
 export const initialIngestionState: IngestionState = {
   localBatch: null,
   orderDraft: {
+    mode: "with-order",
     folderName: "",
     number: "",
     machineCount: "",
