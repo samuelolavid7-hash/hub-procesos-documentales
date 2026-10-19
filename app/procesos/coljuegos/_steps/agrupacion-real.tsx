@@ -26,6 +26,7 @@ interface GroupingStepProps {
   onAssignPhoto: (groupId: string, field: CampoFotoGrupo, photoId: string) => void;
   onAssignSerial: (groupId: string, serial: string | null) => void;
   onConfirmGroup: (groupId: string) => void;
+  onReopenGroup: (groupId: string) => void;
   onBack: () => void;
   onContinue: () => void;
 }
@@ -53,6 +54,7 @@ export function RealGroupingStep({
   onAssignPhoto,
   onAssignSerial,
   onConfirmGroup,
+  onReopenGroup,
   onBack,
   onContinue,
 }: GroupingStepProps) {
@@ -86,6 +88,8 @@ export function RealGroupingStep({
   }
 
   function openPhotoSelector(groupId: string, field: CampoFotoGrupo) {
+    const group = groups.find((candidate) => candidate.id === groupId);
+    if (group?.confirmado) return;
     setPhotoSearch("");
     setSelector({ groupId, field });
   }
@@ -99,7 +103,7 @@ export function RealGroupingStep({
             Agrupación y asignación de seriales
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            Revisa los grupos propuestos por fecha. Puedes cambiar cualquier posición usando cualquier foto del lote; si la foto ya está asignada, ambas posiciones se intercambiarán automáticamente.
+            Revisa los grupos propuestos por fecha. Puedes reutilizar vistas frontales y laterales entre máquinas; las placas permanecen exclusivas de cada grupo.
           </p>
         </div>
         <Button onClick={onBack} variant="secondary">Volver a las fotos</Button>
@@ -144,6 +148,7 @@ export function RealGroupingStep({
                         <input
                           autoComplete="off"
                           className={`mt-1.5 h-11 w-full rounded-lg border bg-white px-3 text-sm font-semibold uppercase text-slate-900 outline-none focus:ring-2 ${duplicateSerial ? "border-red-400 focus:border-red-500 focus:ring-red-100" : "border-slate-300 focus:border-teal-600 focus:ring-teal-100"}`}
+                          disabled={group.confirmado}
                           list={`seriales-grupo-${group.id}`}
                           onChange={(event) => onAssignSerial(group.id, event.target.value.toUpperCase() || null)}
                           placeholder="Escribe el serial"
@@ -155,6 +160,7 @@ export function RealGroupingStep({
                     ) : (
                       <select
                         className="mt-1.5 h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                        disabled={group.confirmado}
                         onChange={(event) => onAssignSerial(group.id, event.target.value || null)}
                         value={group.serialAsignado ?? ""}
                       >
@@ -173,6 +179,7 @@ export function RealGroupingStep({
                     return (
                       <PhotoSlot
                         key={field}
+                        disabled={group.confirmado}
                         field={field}
                         photo={photo}
                         uses={uses}
@@ -186,14 +193,21 @@ export function RealGroupingStep({
                   <p className="text-xs leading-5 text-slate-600">
                     {complete
                       ? group.confirmado
-                        ? "Grupo listo para generar su expediente PDF."
+                        ? "Grupo confirmado y bloqueado. Pulsa Corregir grupo si necesitas modificarlo."
                         : "Las cuatro fotos y el serial están completos. Confirma el grupo."
                       : "Falta asignar el serial o alguna de las cuatro vistas."}
                   </p>
-                  <Button disabled={!complete || group.confirmado} onClick={() => onConfirmGroup(group.id)}>
-                    <Icon name="check" className="h-4 w-4" />
-                    {group.confirmado ? "Grupo confirmado" : "Confirmar grupo"}
-                  </Button>
+                  {group.confirmado ? (
+                    <Button onClick={() => onReopenGroup(group.id)} variant="secondary">
+                      <Icon name="lock" className="h-4 w-4" />
+                      Corregir grupo
+                    </Button>
+                  ) : (
+                    <Button disabled={!complete} onClick={() => onConfirmGroup(group.id)}>
+                      <Icon name="check" className="h-4 w-4" />
+                      Confirmar grupo
+                    </Button>
+                  )}
                 </div>
               </article>
             );
@@ -255,24 +269,43 @@ export function RealGroupingStep({
             </label>
           </div>
           <p className="mb-4 text-xs leading-5 text-slate-600">
-            Se muestran todas las fotos válidas del lote. Elegir una foto ya asignada intercambia las posiciones y evita duplicarla.
+            Se muestran todas las fotos válidas. Las vistas frontales y laterales pueden reutilizarse en otras máquinas. Las placas son exclusivas y, si eliges una ya asignada, se intercambiarán entre ambas máquinas.
           </p>
           {candidates.length ? (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
               {candidates.map((photo) => {
                 const useCount = countPhotoUses(groups, photo.id);
                 const selected = selectedGroup?.fotos[selector!.field] === photo.id;
+                const usedInAnotherFieldOfThisGroup = Boolean(selectedGroup && groupFields.some((field) => (
+                  field !== selector!.field && selectedGroup.fotos[field] === photo.id
+                )));
+                const plateOwner = selector?.field === "placa" ? groups.find((group) => (
+                  group.id !== selectedGroup?.id && group.fotos.placa === photo.id
+                )) : undefined;
+                const plateAssignedElsewhere = Boolean(plateOwner);
+                const plateLockedInConfirmedGroup = Boolean(plateOwner?.confirmado);
                 return (
                   <button
                     key={photo.id}
-                    className="overflow-hidden rounded-xl border border-slate-200 bg-white text-left transition hover:border-teal-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600"
+                    className="overflow-hidden rounded-xl border border-slate-200 bg-white text-left transition hover:border-teal-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600 disabled:cursor-not-allowed disabled:opacity-45"
+                    disabled={usedInAnotherFieldOfThisGroup || plateLockedInConfirmedGroup}
                     onClick={() => selectPhoto(photo.id)}
                   >
                     <PhotoImage photo={photo} />
                     <div className="p-3">
                       <p className="truncate text-xs font-bold text-slate-800">{photo.fileName}</p>
                       <p className={`mt-1 text-[11px] ${useCount > 1 ? "font-bold text-amber-700" : "text-slate-500"}`}>
-                        {selected ? "Selección actual" : useCount ? "Asignada actualmente · se intercambiará" : "Foto disponible"}
+                        {selected
+                          ? "Selección actual"
+                          : usedInAnotherFieldOfThisGroup
+                            ? "Ya usada en otra vista de esta máquina"
+                            : plateLockedInConfirmedGroup
+                              ? "Placa bloqueada en una máquina confirmada"
+                            : plateAssignedElsewhere
+                              ? "Placa de otra máquina · se intercambiará"
+                              : useCount
+                                ? `Usada en ${useCount} ${useCount === 1 ? "posición" : "posiciones"} · se puede reutilizar`
+                                : "Foto disponible"}
                       </p>
                       {photo.suggestedType ? <p className="mt-1 text-[11px] text-slate-500">Posición original: {photo.suggestedType.replaceAll("-", " ")}</p> : null}
                       {selected ? <p className="mt-1 text-[11px] font-bold text-teal-700">Esta foto ya ocupa esta posición</p> : null}
@@ -291,11 +324,13 @@ export function RealGroupingStep({
 }
 
 function PhotoSlot({
+  disabled,
   field,
   photo,
   uses,
   onChange,
 }: {
+  disabled: boolean;
   field: CampoFotoGrupo;
   photo?: LocalBatchPhoto;
   uses: number;
@@ -310,7 +345,9 @@ function PhotoSlot({
         <p className="text-xs font-bold text-slate-900">{groupFieldLabels[field]}</p>
         <p className="mt-1 truncate text-[11px] text-slate-500">{photo?.fileName ?? "Sin foto"}</p>
         {uses > 1 ? <p className="mt-1 text-[11px] font-bold text-amber-700">Reutilizada en {uses} grupos</p> : null}
-        <Button className="mt-3 w-full" onClick={onChange} size="sm" variant="secondary">Cambiar foto</Button>
+        <Button className="mt-3 w-full" disabled={disabled} onClick={onChange} size="sm" variant="secondary">
+          {disabled ? "Foto bloqueada" : "Cambiar foto"}
+        </Button>
       </div>
     </section>
   );

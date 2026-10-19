@@ -147,7 +147,9 @@ export function ColjuegosFlow() {
 
   function assignSerial(groupId: string, serial: string | null) {
     setGroups((currentGroups) => currentGroups.map((group) => (
-      group.id === groupId ? { ...group, serialAsignado: serial, confirmado: false } : group
+      group.id === groupId && !group.confirmado
+        ? { ...group, serialAsignado: serial, confirmado: false }
+        : group
     )));
   }
 
@@ -155,35 +157,39 @@ export function ColjuegosFlow() {
     setGroups((currentGroups) => {
       const targetGroup = currentGroups.find((group) => group.id === groupId);
       const previousPhotoId = targetGroup?.fotos[field] ?? null;
-      if (!targetGroup || previousPhotoId === photoId) return currentGroups;
+      if (!targetGroup || targetGroup.confirmado || previousPhotoId === photoId) return currentGroups;
 
-      // Una foto representa una evidencia física y solo debe ocupar una posición.
-      // Si ya está asignada, intercambiamos ambas fotos para permitir reordenar el
-      // lote sin crear duplicados ni dejar incompleto el otro expediente.
-      const occupiedSlot = currentGroups.flatMap((group) => (
-        (Object.keys(group.fotos) as CampoFotoGrupo[]).map((candidateField) => ({
-          groupId: group.id,
-          field: candidateField,
-          photoId: group.fotos[candidateField],
-        }))
-      )).find((slot) => slot.photoId === photoId);
+      const duplicatedInTargetGroup = (Object.keys(targetGroup.fotos) as CampoFotoGrupo[]).some((candidateField) => (
+        candidateField !== field && targetGroup.fotos[candidateField] === photoId
+      ));
+      if (duplicatedInTargetGroup) return currentGroups;
+
+      // Las placas identifican una máquina concreta y son exclusivas. Si la placa
+      // elegida ya está en otro grupo, se intercambia con la placa anterior.
+      // Las vistas frontales y laterales sí pueden reutilizarse entre máquinas.
+      const occupiedPlate = field === "placa"
+        ? currentGroups.find((group) => group.id !== groupId && group.fotos.placa === photoId)
+        : undefined;
+      if (occupiedPlate?.confirmado) return currentGroups;
 
       return currentGroups.map((group) => {
-        let nextPhotos = group.fotos;
-        let changed = false;
-
         if (group.id === groupId) {
-          nextPhotos = { ...nextPhotos, [field]: photoId };
-          changed = true;
+          return {
+            ...group,
+            fotos: { ...group.fotos, [field]: photoId },
+            confirmado: false,
+            origen: "corregido-manualmente" as const,
+          };
         }
-        if (occupiedSlot && group.id === occupiedSlot.groupId) {
-          nextPhotos = { ...nextPhotos, [occupiedSlot.field]: previousPhotoId };
-          changed = true;
+        if (occupiedPlate && group.id === occupiedPlate.id) {
+          return {
+            ...group,
+            fotos: { ...group.fotos, placa: previousPhotoId },
+            confirmado: false,
+            origen: "corregido-manualmente" as const,
+          };
         }
-
-        return changed
-          ? { ...group, fotos: nextPhotos, confirmado: false, origen: "corregido-manualmente" }
-          : group;
+        return group;
       });
     });
   }
@@ -191,6 +197,12 @@ export function ColjuegosFlow() {
   function confirmGroup(groupId: string) {
     setGroups((currentGroups) => currentGroups.map((group) => (
       group.id === groupId ? { ...group, confirmado: true } : group
+    )));
+  }
+
+  function reopenGroup(groupId: string) {
+    setGroups((currentGroups) => currentGroups.map((group) => (
+      group.id === groupId ? { ...group, confirmado: false } : group
     )));
   }
 
@@ -234,6 +246,7 @@ export function ColjuegosFlow() {
           onBack={() => setCurrentStep(2)}
           onConfirmGroup={confirmGroup}
           onContinue={() => setCurrentStep(4)}
+          onReopenGroup={reopenGroup}
           photos={photos}
           ungroupedPhotoIds={ungroupedPhotoIds}
         />
