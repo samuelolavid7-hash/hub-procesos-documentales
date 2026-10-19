@@ -9,7 +9,6 @@ import {
   countPhotoUses,
   getAssignedSerials,
   groupFieldLabels,
-  groupFieldTypes,
   isGroupComplete,
 } from "@/lib/coljuegos/grouping";
 import type {
@@ -36,6 +35,8 @@ interface PhotoSelectorState {
   field: CampoFotoGrupo;
 }
 
+type PhotoSort = "chronological" | "name";
+
 const groupFields: CampoFotoGrupo[] = [
   "placa",
   "frontal",
@@ -56,19 +57,37 @@ export function RealGroupingStep({
   onContinue,
 }: GroupingStepProps) {
   const [selector, setSelector] = useState<PhotoSelectorState | null>(null);
+  const [photoSearch, setPhotoSearch] = useState("");
+  const [photoSort, setPhotoSort] = useState<PhotoSort>("chronological");
   const photoById = useMemo(() => new Map(photos.map((photo) => [photo.id, photo])), [photos]);
   const assignedSerials = getAssignedSerials(groups);
   const missingSerials = expectedSerials.filter((serial) => !assignedSerials.includes(serial));
   const confirmedGroups = groups.filter((group) => group.confirmado && isGroupComplete(group));
   const selectedGroup = selector ? groups.find((group) => group.id === selector.groupId) : undefined;
-  const candidates = selector
-    ? photos.filter((photo) => photo.suggestedType === groupFieldTypes[selector.field] && photo.processingStatus !== "error")
-    : [];
+  const candidates = useMemo(() => {
+    if (!selector) return [];
+    const normalizedSearch = photoSearch.trim().toLocaleLowerCase("es");
+    return photos
+      .filter((photo) => (
+        photo.processingStatus !== "error"
+        && (!normalizedSearch || photo.fileName.toLocaleLowerCase("es").includes(normalizedSearch))
+      ))
+      .sort((left, right) => (
+        photoSort === "name"
+          ? left.fileName.localeCompare(right.fileName, "es", { numeric: true })
+          : left.capturedAt.localeCompare(right.capturedAt)
+      ));
+  }, [photoSearch, photoSort, photos, selector]);
 
   function selectPhoto(photoId: string) {
     if (!selector) return;
     onAssignPhoto(selector.groupId, selector.field, photoId);
     setSelector(null);
+  }
+
+  function openPhotoSelector(groupId: string, field: CampoFotoGrupo) {
+    setPhotoSearch("");
+    setSelector({ groupId, field });
   }
 
   return (
@@ -80,7 +99,7 @@ export function RealGroupingStep({
             Agrupación y asignación de seriales
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            Revisa los grupos propuestos por fecha. Asigna un serial y confirma cada máquina antes de exportarla.
+            Revisa los grupos propuestos por fecha. Puedes cambiar cualquier posición usando cualquier foto del lote; si la foto ya está asignada, ambas posiciones se intercambiarán automáticamente.
           </p>
         </div>
         <Button onClick={onBack} variant="secondary">Volver a las fotos</Button>
@@ -157,7 +176,7 @@ export function RealGroupingStep({
                         field={field}
                         photo={photo}
                         uses={uses}
-                        onChange={() => setSelector({ groupId: group.id, field })}
+                        onChange={() => openPhotoSelector(group.id, field)}
                       />
                     );
                   })}
@@ -212,29 +231,51 @@ export function RealGroupingStep({
         title="Cambiar foto"
       >
         <div className="max-h-[70vh] overflow-y-auto p-5 sm:p-6">
+          <div className="mb-4 grid gap-3 rounded-xl bg-slate-50 p-4 sm:grid-cols-[1fr_13rem]">
+            <label className="text-xs font-bold text-slate-700">
+              Buscar por nombre
+              <input
+                autoComplete="off"
+                className="mt-1.5 h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                onChange={(event) => setPhotoSearch(event.target.value)}
+                placeholder="Ejemplo: IMG_2048"
+                value={photoSearch}
+              />
+            </label>
+            <label className="text-xs font-bold text-slate-700">
+              Ordenar fotografías
+              <select
+                className="mt-1.5 h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                onChange={(event) => setPhotoSort(event.target.value as PhotoSort)}
+                value={photoSort}
+              >
+                <option value="chronological">Fecha de captura</option>
+                <option value="name">Nombre del archivo</option>
+              </select>
+            </label>
+          </div>
+          <p className="mb-4 text-xs leading-5 text-slate-600">
+            Se muestran todas las fotos válidas del lote. Elegir una foto ya asignada intercambia las posiciones y evita duplicarla.
+          </p>
           {candidates.length ? (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
               {candidates.map((photo) => {
                 const useCount = countPhotoUses(groups, photo.id);
-                const usedAsPlateElsewhere = selector?.field === "placa" && groups.some((group) => (
-                  group.id !== selectedGroup?.id && group.fotos.placa === photo.id
-                ));
                 const selected = selectedGroup?.fotos[selector!.field] === photo.id;
                 return (
                   <button
                     key={photo.id}
-                    className="overflow-hidden rounded-xl border border-slate-200 bg-white text-left transition hover:border-teal-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600 disabled:cursor-not-allowed disabled:opacity-45"
-                    disabled={usedAsPlateElsewhere}
+                    className="overflow-hidden rounded-xl border border-slate-200 bg-white text-left transition hover:border-teal-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600"
                     onClick={() => selectPhoto(photo.id)}
                   >
                     <PhotoImage photo={photo} />
                     <div className="p-3">
                       <p className="truncate text-xs font-bold text-slate-800">{photo.fileName}</p>
                       <p className={`mt-1 text-[11px] ${useCount > 1 ? "font-bold text-amber-700" : "text-slate-500"}`}>
-                        {useCount ? `Usada en ${useCount} ${useCount === 1 ? "grupo" : "grupos"}` : "Foto disponible"}
+                        {selected ? "Selección actual" : useCount ? "Asignada actualmente · se intercambiará" : "Foto disponible"}
                       </p>
-                      {usedAsPlateElsewhere ? <p className="mt-1 text-[11px] text-red-600">Placa asignada a otra máquina</p> : null}
-                      {selected ? <p className="mt-1 text-[11px] font-bold text-teal-700">Selección actual</p> : null}
+                      {photo.suggestedType ? <p className="mt-1 text-[11px] text-slate-500">Posición original: {photo.suggestedType.replaceAll("-", " ")}</p> : null}
+                      {selected ? <p className="mt-1 text-[11px] font-bold text-teal-700">Esta foto ya ocupa esta posición</p> : null}
                     </div>
                   </button>
                 );

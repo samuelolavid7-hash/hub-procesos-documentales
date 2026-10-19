@@ -31,8 +31,9 @@ export async function generateMachinePdf({ group, order, photos }: GenerateMachi
 
   document.setTitle(`Expediente ${group.serialAsignado}`);
   const hasKnownOrder = order.mode === "with-order" && Boolean(order.number);
-  const lotReference = hasKnownOrder ? `SO ${order.number}` : "Lote sin SO";
-  document.setSubject(`${lotReference} · ${order.modelCode || "Modelo no indicado"}`);
+  document.setSubject(hasKnownOrder
+    ? `SO ${order.number} · ${order.modelCode || "Modelo no indicado"}`
+    : order.modelCode || "Modelo no indicado");
   document.setCreator("Hub de Procesos Documentales");
 
   for (let pageIndex = 0; pageIndex < pageFields.length; pageIndex += 1) {
@@ -91,9 +92,12 @@ function drawHeader(
 ) {
   const dark = rgb(0.06, 0.1, 0.16);
   const muted = rgb(0.35, 0.4, 0.47);
+  const hasKnownOrder = order.mode === "with-order" && Boolean(order.number);
   page.drawText(toPdfText(`Expediente fotográfico · ${viewLabel}`), { x: 40, y: 795, size: 16, font: boldFont, color: dark });
-  page.drawText(toPdfText(order.mode === "with-order" && order.number ? `SO ${order.number}` : "Lote sin SO"), { x: 40, y: 773, size: 10, font: regularFont, color: muted });
-  page.drawText(toPdfText(`Modelo: ${order.modelCode || "No indicado"}`), { x: 190, y: 773, size: 10, font: regularFont, color: muted });
+  if (hasKnownOrder) {
+    page.drawText(toPdfText(`SO ${order.number}`), { x: 40, y: 773, size: 10, font: regularFont, color: muted });
+  }
+  page.drawText(toPdfText(`Modelo: ${order.modelCode || "No indicado"}`), { x: hasKnownOrder ? 190 : 40, y: 773, size: 10, font: regularFont, color: muted });
   page.drawText(toPdfText(`Serial: ${serial}`), { x: 365, y: 773, size: 10, font: boldFont, color: dark });
   page.drawLine({ start: { x: 40, y: 755 }, end: { x: a4Width - 40, y: 755 }, thickness: 1, color: rgb(0.05, 0.47, 0.43) });
 }

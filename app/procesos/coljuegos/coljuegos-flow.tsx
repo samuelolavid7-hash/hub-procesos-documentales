@@ -152,16 +152,40 @@ export function ColjuegosFlow() {
   }
 
   function assignPhoto(groupId: string, field: CampoFotoGrupo, photoId: string) {
-    setGroups((currentGroups) => currentGroups.map((group) => (
-      group.id === groupId
-        ? {
-          ...group,
-          fotos: { ...group.fotos, [field]: photoId },
-          confirmado: false,
-          origen: "corregido-manualmente",
+    setGroups((currentGroups) => {
+      const targetGroup = currentGroups.find((group) => group.id === groupId);
+      const previousPhotoId = targetGroup?.fotos[field] ?? null;
+      if (!targetGroup || previousPhotoId === photoId) return currentGroups;
+
+      // Una foto representa una evidencia física y solo debe ocupar una posición.
+      // Si ya está asignada, intercambiamos ambas fotos para permitir reordenar el
+      // lote sin crear duplicados ni dejar incompleto el otro expediente.
+      const occupiedSlot = currentGroups.flatMap((group) => (
+        (Object.keys(group.fotos) as CampoFotoGrupo[]).map((candidateField) => ({
+          groupId: group.id,
+          field: candidateField,
+          photoId: group.fotos[candidateField],
+        }))
+      )).find((slot) => slot.photoId === photoId);
+
+      return currentGroups.map((group) => {
+        let nextPhotos = group.fotos;
+        let changed = false;
+
+        if (group.id === groupId) {
+          nextPhotos = { ...nextPhotos, [field]: photoId };
+          changed = true;
         }
-        : group
-    )));
+        if (occupiedSlot && group.id === occupiedSlot.groupId) {
+          nextPhotos = { ...nextPhotos, [occupiedSlot.field]: previousPhotoId };
+          changed = true;
+        }
+
+        return changed
+          ? { ...group, fotos: nextPhotos, confirmado: false, origen: "corregido-manualmente" }
+          : group;
+      });
+    });
   }
 
   function confirmGroup(groupId: string) {
