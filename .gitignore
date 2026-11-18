@@ -18,3 +18,7 @@ Thumbs.db
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts
+
+# Archivos generados por la prueba de importación Excel
+/tmp/excel-test/
+/outputs/plantilla-coljuegos/

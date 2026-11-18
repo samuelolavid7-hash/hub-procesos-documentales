@@ -217,6 +217,8 @@ export interface FotosDelGrupo {
 }
 
 export interface GrupoFotografico {
+  /** El lote Excel puede contener varios modelos; cada expediente conserva el suyo. */
+  codigoModelo?: string;
   id: string;
   numeroGrupo: number;
   fotos: FotosDelGrupo;

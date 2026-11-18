@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import { ColjuegosFlow } from "@/app/procesos/coljuegos/coljuegos-flow";
+import { ExcelWorkflow } from "@/app/procesos/coljuegos/_components/excel-workflow";
 
 export const metadata: Metadata = {
   title: "Expedientes Coljuegos",
 };
 
 export default function ColjuegosPage() {
-  return <ColjuegosFlow />;
+  return <ExcelWorkflow />;
 }

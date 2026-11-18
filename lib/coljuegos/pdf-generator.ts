@@ -22,6 +22,7 @@ interface GenerateMachinePdfOptions {
 
 /** Genera las cuatro páginas de una máquina sin subir imágenes a un servidor. */
 export async function generateMachinePdf({ group, order, photos }: GenerateMachinePdfOptions): Promise<Uint8Array> {
+  order = { ...order, modelCode: group.codigoModelo ?? order.modelCode };
   if (!group.serialAsignado) throw new Error("El grupo no tiene un serial asignado.");
 
   const photoById = new Map(photos.map((photo) => [photo.id, photo]));
